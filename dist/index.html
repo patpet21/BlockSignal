@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Research NYC buildings with open HPD violations, review registered owners and agents, and build an annotated shortlist for your service area.">
+  <title>BlockSignal | NYC building research</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside>
+    <a class="brand" href="#">▥ <b>BlockSignal</b><span>NYC</span></a>
+    <div class="navlabel">YOUR RESEARCH WORKSPACE</div>
+    <nav><a href="#research" class="active">↗ Find buildings</a><a href="#shortlist">◇ Your shortlist</a><a href="#workflow">◷ How to use it</a></nav>
+    <div class="aside-bottom"><span class="dot"></span> Public records. Clear sources.<p>Research a building.<br>Verify the business opportunity.</p><a href="https://www.nyc.gov/site/hpd/about/open-data.page" target="_blank" rel="noopener">HPD data sources ↗</a></div>
+  </aside>
+  <main>
+    <header><span>BUILDING RESEARCH / NEW YORK CITY</span><span class="badge">RESEARCH PROTOTYPE</span></header>
+    <section id="research">
+      <div class="eyebrow">FOR NYC MAINTENANCE &amp; SERVICE BUSINESSES</div>
+      <h1>Find buildings.<br>Know <em>why they matter.</em></h1>
+      <p class="intro">Find open HPD records relevant to your trade and service area. Review the registered owner or agent, save useful buildings, and export your research with qualification notes.</p>
+      <div class="stats">
+        <div><span>01 / FILTER</span><strong>Search your trade</strong><small>Heating, pest control, painting</small></div>
+        <div><span>02 / REVIEW</span><strong>Check the evidence</strong><small>Violation text, dates, registered contacts</small></div>
+        <div><span>03 / ORGANIZE</span><strong>Build a shortlist</strong><small>Keep notes and export a usable CSV</small></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div><h2>Building finder</h2><p>Open records approved in the past 12 months · up to 100 buildings</p></div><span class="live">● NYC OPEN DATA</span></div>
+        <form id="search">
+          <label>Borough<select id="boro"><option>BROOKLYN</option><option>MANHATTAN</option><option>QUEENS</option><option>BRONX</option><option>STATEN ISLAND</option></select></label>
+          <label>Service<select id="service"><option value="all">All violations</option><option value="heat">Heating &amp; hot water</option><option value="pest">Pest control</option><option value="paint">Painting &amp; plaster</option></select></label>
+          <label>ZIP code (optional)<input id="zip" inputmode="numeric" pattern="[0-9]{5}" placeholder="e.g. 11206" maxlength="5"></label>
+          <button type="submit" id="run">Find buildings ↗</button>
+        </form>
+        <div class="toolbar"><span id="status" role="status" aria-live="polite">Search to load real NYC records.</span><div><button class="ghost" id="demo">Try an example</button><button class="ghost" id="export" disabled>↓ Export results</button></div></div>
+        <div class="table-wrap"><table><thead><tr><th>BUILDING</th><th>MATCHING RECORDS</th><th>CLASS C</th><th>LATEST APPROVAL</th><th></th></tr></thead><tbody id="rows"><tr><td colspan="5" class="empty"><span>⌕</span>Start with a trade and a neighborhood.<small>For example: pest control buildings in Brooklyn ZIP 11206.</small></td></tr></tbody></table></div>
+        <div class="note">Counts reflect your selected filters. Service matching uses keywords and needs manual review. An open violation does not establish purchase intent, budget, or a need for your specific service. HPD class C is a record classification.</div>
+      </div>
+      <div id="detail" class="panel detail" hidden aria-live="polite"></div>
+    </section>
+    <section id="shortlist">
+      <div class="eyebrow">TURN SEARCH RESULTS INTO RESEARCH YOU CAN USE</div>
+      <div class="section-title"><div><h2>Your building shortlist</h2><p>Saved on this browser. Export a copy to share or keep a backup.</p></div><button id="export-shortlist" disabled>↓ Export shortlist</button></div>
+      <div class="panel"><div id="saved-list" class="saved-list"></div></div>
+      <p id="saved-status" class="note" role="status" aria-live="polite"></p>
+    </section>
+    <section id="workflow">
+      <div class="eyebrow">WHAT THIS TOOL ACTUALLY DOES</div>
+      <h2>Less record hunting. More informed research.</h2>
+      <p class="intro">A pest control company can narrow down relevant buildings in its service area, inspect the underlying record, and look up the registered manager. BlockSignal brings those steps together. You still decide whether each building is worth pursuing.</p>
+      <div class="steps">
+        <article><b>01</b><h3>Match your service area</h3><p>Choose your trade and ZIP code. Results rank buildings by matching open records, not by their likelihood of buying.</p></article>
+        <article><b>02</b><h3>Verify before saving</h3><p>Read the actual violation. Confirm the owner or managing agent using HPD Online and a current business source. Registered mailing addresses are not verified sales contacts.</p></article>
+        <article><b>03</b><h3>Record your next step</h3><p>Save the building with a qualification note. Export the shortlist with sources and the contacts you reviewed. No outreach is sent by this app.</p></article>
+      </div>
+      <div class="panel explanation"><h3>A prototype, with a business hypothesis to test</h3><p>You could use this for your own prospect research or offer manually verified research reports to local service businesses. The underlying NYC data is free. Whether the saved time and better qualification are worth paying for has not been validated.</p><p>No payments, customer accounts, automated outreach, or guaranteed leads are included.</p></div>
+    </section>
+    <footer>BlockSignal · Independent tool. Not affiliated with NYC or HPD.<span>Shortlists are stored locally on your browser.</span></footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

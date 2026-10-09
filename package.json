@@ -1,0 +1,13 @@
+{
+  "name": "blocksignal",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "NYC building research from public HPD records",
+  "scripts": {
+    "dev": "node scripts/preview.mjs",
+    "test": "node --test",
+    "verify:live": "node scripts/verify-live.mjs"
+  },
+  "engines": { "node": ">=22" }
+}
