@@ -1,5 +1,7 @@
 # Enquiry follow-up installation pilot
 
+**Archived proposal:** the user rejected the manual CSV enquiry workflow as the main product direction on October 9, 2026. This document preserves the earlier scope and price hypothesis; it is not an active validated offer.
+
 Draft commercial offer. Proposed price, not validated customer demand or a signed contract.
 
 ## Customer outcome

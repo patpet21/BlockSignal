@@ -1,9 +1,9 @@
 {
   "name": "blocksignal",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
-  "description": "Enquiry follow-up audit and customer-specific workflow installation pilot",
+  "description": "NYC property research workspace with public-source maps, dossiers and saved-property monitoring",
   "scripts": {
     "dev": "node scripts/preview.mjs",
     "test": "node --test",

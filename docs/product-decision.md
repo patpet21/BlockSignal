@@ -1,5 +1,7 @@
 # BlockSignal product decision
 
+**Superseded direction:** the user rejected the manual CSV enquiry workflow as the main product on October 9, 2026. Property research is restored as the homepage; the audit is retained as an experimental secondary page. The decision and pricing below are historical, unvalidated proposals.
+
 Research date: October 9, 2026. Evidence, judgments and unvalidated commercial assumptions are separated below.
 
 ## Decision
@@ -44,7 +46,7 @@ The user can review a record, update a working copy, prepare a draft and export 
 
 The n8n export is an inactive authenticated snapshot-audit component. Live ingestion, durable state, external task creation, delivery and calendar connections require authorised customer-specific configuration. The user deferred n8n deployment; no instance has been connected.
 
-The earlier NYC map and dossier remain available as a secondary research tool.
+At the time of this proposal the NYC map and dossier were a secondary research tool. They have since been restored as the homepage, as noted above.
 
 ## Measurement and acceptance
 

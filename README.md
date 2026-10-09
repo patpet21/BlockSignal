@@ -1,16 +1,18 @@
 # BlockSignal
 
-An English-language enquiry follow-up audit and installation-service pilot for residential agencies, multifamily brokers and property management firms. The main page reviews the requests a business actually received: missing ownership, unrecorded responses and overdue next steps. Customer records are supplied by the business; no demonstration customers, invented revenue or conversion predictions appear in the application.
+An English-language NYC property research workspace for residential agents, multifamily brokers and property managers. The main page queries public NYC sources on demand, places matched tax lots on a map and opens source-linked property dossiers. Using the research workspace requires no CSV download or upload.
 
-The earlier NYC property map, PLUTO/HPD/ACRIS dossiers and portfolio monitor are available at **`property-research.html`** as a secondary research tool.
+Map, PLUTO/HPD/ACRIS dossiers and saved-property comparisons are restored as the homepage. The existing **`property-research.html`** URL remains available for compatibility. No research features or saved-property storage have been removed.
+
+The CSV enquiry audit is retained at **`request-audit.html`** as an experimental secondary tool. The manual import workflow and associated installation-service proposal were rejected as the main product direction. Their documents and prices are historical hypotheses, not an active validated offer.
 
 ## Concrete use case
 
-A team imports its actual enquiry/activity records, chooses its response target, reviews missing assignments and overdue actions, and exports a report for its working process. It can update a browser working copy and prepare a reply draft. Missing activity is flagged for source review rather than claimed as proof that a lead was ignored.
+A user chooses a borough, ZIP and public-record or property search. The app requests records directly from NYC APIs, plots available PLUTO coordinates, and loads tax-lot facts, registered contacts, open HPD records and ACRIS documents for a selected property. The user can save it and compare open-record snapshots on subsequent checks.
 
-The proposed paid offering is configuration and maintenance of a customer-specific follow-up workflow: one authorised source, one accountable handoff and an internal exception report. The **$750 setup + $149/month care** pilot price is an unvalidated offer, not established willingness to pay or revenue. Read [the product decision and competitor evidence](docs/product-decision.md) and [the pilot scope](docs/follow-up-pilot.md).
+Public-source requests run when the user searches or opens a dossier; source records can lag current conditions. CSV exports are optional outputs. Portfolio comparisons are started in the browser, while scheduled monitoring requires a separately configured n8n instance. The user deferred n8n setup; no instance or background schedule has been connected.
 
-The browser audit works now. Mailbox/CRM ingestion, durable state, task delivery and calendar integration require authorised client-specific configuration; none is connected by this repository. The user deferred n8n server setup. This is a prototype and a scoped service proposal, not a deployed multi-tenant SaaS.
+The existing research prototype does not establish seller intent or customer willingness to pay. Its commercial differentiation still needs validation. The superseded enquiry proposal and evidence remain in [product-decision.md](docs/product-decision.md) for reference.
 
 ## Deploy on Netlify
 
@@ -43,13 +45,7 @@ Live verification requires internet access. The urban check validates a real HPD
 
 ## What works
 
-- Request CSV import and validation, with an explicit timezone and a configurable response target.
-- Review rules for ownership, response history, recorded next actions and appointment outcomes.
-- Three commercial enquiry types: residential, multifamily and owner requests for management services.
-- Local working-copy edits, manually reviewed reply drafts, CSV record/action exports.
-- An inactive authenticated n8n snapshot-audit core. See [request-audit.md](docs/request-audit.md).
-
-The secondary NYC research page retains:
+The primary NYC research workspace provides:
 
 - Three modes with different default searches and workflow guidance.
 - Leaflet map with real PLUTO tax-lot coordinates, including coverage/missing-coordinate counts.
@@ -59,6 +55,8 @@ The secondary NYC research page retains:
 - Complete-snapshot comparisons: new records, status updates and records no longer returned as open.
 - CSV exports and print-ready HTML dossiers (open in a browser to print/save PDF).
 - n8n monitor export containing your saved HPD IDs. No fake demonstration records in the new interface.
+
+The experimental `request-audit.html` page retains CSV enquiry validation, review rules, browser working-copy edits and an inactive n8n snapshot-audit export. See [request-audit.md](docs/request-audit.md). This manual tool is not the primary product direction.
 
 ## Practical limits
 
@@ -98,13 +96,13 @@ NYC research limits:
 
 ## Next business validation
 
-Use real enquiry/activity records to identify an observable handoff problem. Agree the process and metrics, then seek two bounded paid installations and a renewal decision before investing in a multi-tenant platform. Customers satisfied by their existing CRM configuration are not a reason to build another system. No prospect has been contacted and no paid pilot has been obtained.
+Validate a specific, useful outcome from the property-research workflow before presenting it as a paid product. The manual CSV enquiry audit is no longer the primary offer. No prospect has been contacted and no paid pilot has been obtained.
 
 ## n8n integration
 
-The main page exports an inactive, authenticated **request audit core**, documented in [request-audit.md](docs/request-audit.md) and downloadable as [request-audit-workflow.json](docs/request-audit-workflow.json). It accepts supplied snapshots, validates them and returns review findings. It has no source connections, persistent request store or notification delivery.
+The experimental `request-audit.html` page exports an inactive, authenticated **request audit core**, documented in [request-audit.md](docs/request-audit.md) and downloadable as [request-audit-workflow.json](docs/request-audit-workflow.json). It accepts supplied snapshots, validates them and returns review findings. It has no source connections, persistent request store or notification delivery.
 
-The secondary NYC research page retains its earlier portfolio monitor:
+The primary property research workspace exports its portfolio monitor:
 
 Save a property after loading its dossier, then click **Export n8n monitor**. This exports actual saved HPD building IDs, not a generic fake portfolio. Import the JSON into n8n, review it, test the NYC request, and publish when you want to enable the daily 7 AM `America/New_York` schedule. No instance was connected and no schedule activated in this repository setup.
 
