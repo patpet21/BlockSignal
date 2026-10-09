@@ -1,0 +1,306 @@
+{
+  "name": "BlockSignal 02 | Collect HPD changes into a durable outbox",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Manual test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "configuration",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const workspaceConfig=function workspaceConfig(workspaceId) {\n  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(workspaceId || '') || workspaceId.startsWith('REPLACE')) throw new Error('Configure this workflow workspaceId before execution.');\n  return { workspaceId };\n}; const config=workspaceConfig('REPLACE_WORKSPACE_ID'); return [{json:{...config,leaseToken:String($execution.id)}}];"
+      }
+    },
+    {
+      "id": "claim",
+      "name": "Claim up to ten due properties",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM blocksignal.claim_checks($1,$2);",
+        "options": {
+          "queryReplacement": "={{ [$json.workspaceId,$json.leaseToken] }}"
+        }
+      }
+    },
+    {
+      "id": "next-property",
+      "name": "Next property",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        700,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "url",
+      "name": "Build source request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const p=$input.first().json; const params={'$where':\"buildingid='\"+p.building_id+\"' AND violationstatus='Open'\",'$limit':'1001','$order':'violationid ASC'};return [{json:{...p,url:'https://data.cityofnewyork.us/resource/wvxf-dwi5.json?'+Object.entries(params).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&')}}];"
+      }
+    },
+    {
+      "id": "source",
+      "name": "Fetch HPD open snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "timeout": 45000,
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "normalize",
+      "name": "Validate complete snapshot",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const snapshotResult=function snapshotResult(response, buildingId) {\n  const fail = errorCode => ({ ok: false, errorCode });\n  if (response?.statusCode !== 200) return fail('source_http_error');\n  const rows = response.body;\n  if (!Array.isArray(rows)) return fail('invalid_response');\n  if (rows.length > 1000) return fail('snapshot_overflow');\n  const ids = new Set();\n  const fields = ['violationid', 'buildingid', 'violationstatus', 'class', 'currentstatus', 'currentstatusdate', 'novdescription'];\n  const normalized = [];\n  for (const row of rows) {\n    if (!row || typeof row !== 'object' || !/^\\d+$/.test(String(row.violationid || '')) || String(row.buildingid) !== buildingId\n      || row.violationstatus !== 'Open' || !/^[A-Z]{1,8}$/.test(row.class || '')) return fail('invalid_record');\n    const id = String(row.violationid);\n    if (ids.has(id)) return fail('duplicate_record');\n    ids.add(id);\n    if (fields.some(key => row[key] != null && (typeof row[key] !== 'string' || row[key].length > 10000))) return fail('invalid_record');\n    normalized.push(Object.fromEntries(fields.map(key => [key, row[key] ?? null])));\n  }\n  return { ok: true, rows: normalized };\n};const p=$('Next property').item.json;return [{json:{...p,result:snapshotResult($input.first().json,p.building_id)}}];"
+      }
+    },
+    {
+      "id": "failure",
+      "name": "Record source failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        220
+      ],
+      "parameters": {
+        "jsCode": "const p=$('Next property').item.json;return [{json:{...p,result:{ok:false,errorCode:'source_request_failed'}}}];"
+      }
+    },
+    {
+      "id": "commit",
+      "name": "Commit snapshot and pending alerts atomically",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT blocksignal.commit_check($1,$2,$3,$4::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [$json.workspace,$json.building_id,$json.lease_token,JSON.stringify($json.result)] }}"
+        }
+      }
+    },
+    {
+      "id": "setup-note",
+      "name": "Configure before publishing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -300
+      ],
+      "parameters": {
+        "width": 980,
+        "height": 210,
+        "content": "## Collector\nSet workspaceId and Postgres credentials. Each property is due every 24 hours; the worker claims up to ten every 15 minutes. Expiring DB leases isolate overlapping workers. First successful snapshot is a baseline. Invalid, failed or >1,000-record responses retain it. Three source failures create one outage notice; recovery is recorded. Assign workflow 04 as the error workflow after import."
+      }
+    }
+  ],
+  "connections": {
+    "Schedule": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual test": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Claim up to ten due properties",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim up to ten due properties": {
+      "main": [
+        [
+          {
+            "node": "Next property",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next property": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build source request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build source request": {
+      "main": [
+        [
+          {
+            "node": "Fetch HPD open snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch HPD open snapshot": {
+      "main": [
+        [
+          {
+            "node": "Validate complete snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record source failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate complete snapshot": {
+      "main": [
+        [
+          {
+            "node": "Commit snapshot and pending alerts atomically",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record source failure": {
+      "main": [
+        [
+          {
+            "node": "Commit snapshot and pending alerts atomically",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Commit snapshot and pending alerts atomically": {
+      "main": [
+        [
+          {
+            "node": "Next property",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York",
+    "executionTimeout": 1800,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {}
+}

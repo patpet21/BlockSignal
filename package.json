@@ -1,6 +1,6 @@
 {
   "name": "blocksignal",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "NYC property research workspace with public-source maps, dossiers and saved-property monitoring",
@@ -8,7 +8,14 @@
     "dev": "node scripts/preview.mjs",
     "test": "node --test",
     "verify:live": "node scripts/verify-live.mjs",
-    "verify:urban": "node scripts/verify-urban.mjs"
+    "verify:urban": "node scripts/verify-urban.mjs",
+    "export:automation": "node scripts/export-automation.mjs",
+    "verify:automation-source": "node scripts/verify-automation-source.mjs"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
 }

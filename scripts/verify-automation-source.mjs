@@ -1,0 +1,10 @@
+import { snapshotResult } from '../automation/workflows.mjs';
+const buildingId = process.argv[2];
+if (!/^\d{1,12}$/.test(buildingId || '')) throw new Error('Pass an actual HPD building ID as the first argument.');
+const url = new URL('https://data.cityofnewyork.us/resource/wvxf-dwi5.json');
+url.searchParams.set('$where', `buildingid='${buildingId}' AND violationstatus='Open'`);
+url.searchParams.set('$limit', '1001'); url.searchParams.set('$order', 'violationid ASC');
+const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+const result = snapshotResult({ statusCode: response.status, body: await response.json() }, buildingId);
+if (!result.ok) throw new Error(`Source validation rejected: ${result.errorCode}`);
+console.log(JSON.stringify({ buildingId, source: 'NYC HPD', fetchedAt: new Date().toISOString(), validatedRecords: result.rows.length, classes: [...new Set(result.rows.map(r => r.class))], noDatabaseWrites: true, noNotifications: true }, null, 2));

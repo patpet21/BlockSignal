@@ -21,7 +21,7 @@ The existing research prototype does not establish seller intent or customer wil
 3. Leave the base directory and build command empty. Publish directory: `dist`.
 4. Deploy. The root `netlify.toml` already specifies the publish directory.
 
-No build, API key, ChatGPT account, environment variable, backend, or paid service is required by the application. Netlify account/hosting terms are separate. The GitHub version is independent of the earlier Sites-hosted prototype.
+No build, API key, ChatGPT account, environment variable, backend, or paid service is required by the browser research application. The separate n8n automation package needs a configured instance, PostgreSQL and authorised notification credentials before live operation. Netlify account/hosting terms are separate. The GitHub version is independent of the earlier Sites-hosted prototype.
 
 Official configuration reference: https://docs.netlify.com/build/configure-builds/file-based-configuration/
 
@@ -40,6 +40,8 @@ npm test
 npm run verify:live
 npm run verify:urban
 ```
+
+Install development dependencies with `npm ci` before running tests. PGlite is used only to verify the automation SQL locally; the browser application still runs without dependency installation.
 
 Live verification requires internet access. The urban check validates a real HPD → PLUTO join, official coordinates, a multifamily search, contacts, open records and ACRIS documents. If a Windows TLS inspection product uses the Windows trust store, `NODE_USE_SYSTEM_CA=1` may be needed. Certificate verification must remain enabled.
 
@@ -99,6 +101,8 @@ NYC research limits:
 Validate a specific, useful outcome from the property-research workflow before presenting it as a paid product. The manual CSV enquiry audit is no longer the primary offer. No prospect has been contacted and no paid pilot has been obtained.
 
 ## n8n integration
+
+The new [automation package](automation/README.md) provides five inactive workflows: authenticated property-watch registration, HPD collection into persistent PostgreSQL history/outbox, internal SMTP delivery with bounded retries, operator execution errors and daily health reporting. The actual SQL functions are tested locally. It contains no configured instance or recipients. An authenticated server gateway must still connect browser saves to the watch endpoint; the current Save button remains browser-local. See its installation and acceptance checks before publishing.
 
 The experimental `request-audit.html` page exports an inactive, authenticated **request audit core**, documented in [request-audit.md](docs/request-audit.md) and downloadable as [request-audit-workflow.json](docs/request-audit-workflow.json). It accepts supplied snapshots, validates them and returns review findings. It has no source connections, persistent request store or notification delivery.
 

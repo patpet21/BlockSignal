@@ -1,0 +1,100 @@
+{
+  "name": "BlockSignal 01 | Register or pause a watched property",
+  "active": false,
+  "nodes": [
+    {
+      "id": "watch",
+      "name": "Authenticated server request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "blocksignal/property-watch",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "validate",
+      "name": "Validate authorised workspace and input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const workspaceConfig=function workspaceConfig(workspaceId) {\n  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(workspaceId || '') || workspaceId.startsWith('REPLACE')) throw new Error('Configure this workflow workspaceId before execution.');\n  return { workspaceId };\n};const watchInput=function watchInput(body, workspaceId) {\n  const config = workspaceConfig(workspaceId);\n  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Expected a watch request object.');\n  const buildingId = String(body.buildingId || '');\n  const action = body.action || 'watch';\n  const address = String(body.address || '').trim();\n  if (!/^\\d{1,12}$/.test(buildingId)) throw new Error('An actual matched HPD building ID is required.');\n  if (!['watch', 'pause'].includes(action)) throw new Error('Unsupported watch action.');\n  if (action === 'watch' && (!address || address.length > 300 || /[\\r\\n\\0]/.test(address))) throw new Error('Provide an address of up to 300 characters.');\n  return { ...config, buildingId, address, action };\n};return [{json:watchInput($input.first().json.body,'REPLACE_WORKSPACE_ID')}];"
+      }
+    },
+    {
+      "id": "register",
+      "name": "Persist watch configuration",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT blocksignal.watch_property($1,$2,$3,$4) AS result;",
+        "options": {
+          "queryReplacement": "={{ [$json.workspaceId,$json.buildingId,$json.address,$json.action] }}"
+        }
+      }
+    },
+    {
+      "id": "setup-note",
+      "name": "Configure before publishing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -300
+      ],
+      "parameters": {
+        "width": 980,
+        "height": 210,
+        "content": "## Private server endpoint\nAssign Header Auth and a dedicated Postgres credential. Set the fixed authorised workspace ID in the validator. Import automation/schema.sql first. An authenticated server gateway can call this endpoint when an app property is saved. No public-browser credentials, CSV ingestion or customer messages. App gateway integration is not installed by this export."
+      }
+    }
+  ],
+  "connections": {
+    "Authenticated server request": {
+      "main": [
+        [
+          {
+            "node": "Validate authorised workspace and input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate authorised workspace and input": {
+      "main": [
+        [
+          {
+            "node": "Persist watch configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York",
+    "executionTimeout": 1800,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {}
+}

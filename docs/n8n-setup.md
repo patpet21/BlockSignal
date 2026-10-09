@@ -1,5 +1,7 @@
 # BlockSignal n8n monitor
 
+For the new database-backed implementation, use [automation/README.md](../automation/README.md). It contains five inactive workflows, a PostgreSQL migration, a durable event/outbox design, source and delivery retries, operator errors and health reporting. App gateway integration, credentials and real n8n execution tests remain to be configured. The small static-state export described below is retained as the original prototype.
+
 This integration is prepared for import. It is not connected to any n8n instance or notification service. The user deferred server setup.
 
 [example-portfolio-monitor.json](example-portfolio-monitor.json) is an inactive example exported from the browser and checked locally. It contains the real public HPD ID `877800` for `854 MYRTLE AVENUE`, not your customer portfolio. Export your own saved properties before enabling a schedule.

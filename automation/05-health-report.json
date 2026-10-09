@@ -1,0 +1,181 @@
+{
+  "name": "BlockSignal 05 | Daily operational health report",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Manual test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "configuration",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const workspaceConfig=function workspaceConfig(workspaceId) {\n  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(workspaceId || '') || workspaceId.startsWith('REPLACE')) throw new Error('Configure this workflow workspaceId before execution.');\n  return { workspaceId };\n};const emailConfig=function emailConfig(config) {\n  workspaceConfig(config.workspaceId);\n  for (const key of ['fromEmail', 'toEmail']) {\n    if (!/^[^\\s@,<>]+@[^\\s@,<>]+\\.[^\\s@,<>]+$/.test(config[key] || '') || config[key].includes('REPLACE')) throw new Error('Configure authorised internal sender and recipient before execution.');\n  }\n  return config;\n}; const config=emailConfig({workspaceId:'REPLACE_WORKSPACE_ID',fromEmail:'REPLACE_SENDER',toEmail:'REPLACE_INTERNAL_RECIPIENT'});return [{json:{...config,leaseToken:String($execution.id)}}];"
+      }
+    },
+    {
+      "id": "health",
+      "name": "Read collector and delivery health",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT blocksignal.health_report($1) AS report;",
+        "options": {
+          "queryReplacement": "={{ [$json.workspaceId] }}"
+        }
+      }
+    },
+    {
+      "id": "message",
+      "name": "Report actionable issues only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const healthMessage=function healthMessage(report) {\n  const issues = Object.entries(report).filter(([key, value]) => key !== 'workspace' && value !== false && value !== 0);\n  return issues.length ? { subject: 'BlockSignal | operational attention required', text: [\n    'Workspace: ' + report.workspace, ...issues.map(([key, value]) => key + ': ' + value),\n    'Review source failures, overdue work and undelivered notices in the private database/n8n console.',\n  ].join('\\n') } : null;\n};const message=healthMessage($input.first().json.report);return message?[{json:message}]:[];"
+      }
+    },
+    {
+      "id": "notify-operator",
+      "name": "Notify operator",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "operation": "send",
+        "fromEmail": "={{ $('Configuration').first().json.fromEmail }}",
+        "toEmail": "={{ $('Configuration').first().json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "setup-note",
+      "name": "Configure before publishing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -300
+      ],
+      "parameters": {
+        "width": 980,
+        "height": 210,
+        "content": "## Operational checks\nSet workspace ID, operator sender/recipient, SMTP and Postgres credentials. Daily at 08:00 New York; no message when healthy. A separate external uptime/heartbeat monitor is still required to detect a dead host, a failed schedule or simultaneous database/SMTP outage. Assign workflow 04 as the error workflow."
+      }
+    }
+  ],
+  "connections": {
+    "Schedule": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual test": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Read collector and delivery health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read collector and delivery health": {
+      "main": [
+        [
+          {
+            "node": "Report actionable issues only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report actionable issues only": {
+      "main": [
+        [
+          {
+            "node": "Notify operator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York",
+    "executionTimeout": 1800,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {}
+}

@@ -1,0 +1,122 @@
+{
+  "name": "BlockSignal 04 | Operator execution errors",
+  "active": false,
+  "nodes": [
+    {
+      "id": "error",
+      "name": "Execution error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "configuration",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const workspaceConfig=function workspaceConfig(workspaceId) {\n  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(workspaceId || '') || workspaceId.startsWith('REPLACE')) throw new Error('Configure this workflow workspaceId before execution.');\n  return { workspaceId };\n};const emailConfig=function emailConfig(config) {\n  workspaceConfig(config.workspaceId);\n  for (const key of ['fromEmail', 'toEmail']) {\n    if (!/^[^\\s@,<>]+@[^\\s@,<>]+\\.[^\\s@,<>]+$/.test(config[key] || '') || config[key].includes('REPLACE')) throw new Error('Configure authorised internal sender and recipient before execution.');\n  }\n  return config;\n}; const config=emailConfig({workspaceId:'REPLACE_WORKSPACE_ID',fromEmail:'REPLACE_SENDER',toEmail:'REPLACE_INTERNAL_RECIPIENT'});return [{json:{...config,leaseToken:String($execution.id)}}];"
+      }
+    },
+    {
+      "id": "message",
+      "name": "Prepare operator incident",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const operatorMessage=function operatorMessage(error) {\n  const clean = value => String(value || '').replace(/[\\r\\n\\0]/g, ' ').slice(0, 200);\n  return { subject: 'BlockSignal | automation execution failed', text: [\n    'Workflow: ' + clean(error.workflow?.name), 'Execution: ' + clean(error.execution?.id),\n    'Last node: ' + clean(error.execution?.lastNodeExecuted),\n    'Open the private n8n execution log to investigate. Source snapshots and raw error payloads are not included.',\n  ].join('\\n') };\n};return [{json:operatorMessage($('Execution error').first().json)}];"
+      }
+    },
+    {
+      "id": "notify-operator",
+      "name": "Notify operator",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        0
+      ],
+      "parameters": {
+        "operation": "send",
+        "fromEmail": "={{ $('Configuration').first().json.fromEmail }}",
+        "toEmail": "={{ $('Configuration').first().json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "setup-note",
+      "name": "Configure before publishing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -300
+      ],
+      "parameters": {
+        "width": 980,
+        "height": 210,
+        "content": "## Operator channel\nSet sender/operator recipient and SMTP credentials. Select this imported workflow in the other workflows’ Error workflow setting. Expected source and delivery failures are handled in their durable queues; this handler reports unexpected execution failures. Do not select this workflow as its own error handler. It cannot alert if the whole n8n host or its SMTP channel is down."
+      }
+    }
+  ],
+  "connections": {
+    "Execution error": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Prepare operator incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare operator incident": {
+      "main": [
+        [
+          {
+            "node": "Notify operator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York",
+    "executionTimeout": 1800,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {}
+}

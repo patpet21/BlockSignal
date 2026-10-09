@@ -1,0 +1,302 @@
+{
+  "name": "BlockSignal 03 | Deliver pending internal notices",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "manual",
+      "name": "Manual test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "configuration",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const workspaceConfig=function workspaceConfig(workspaceId) {\n  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(workspaceId || '') || workspaceId.startsWith('REPLACE')) throw new Error('Configure this workflow workspaceId before execution.');\n  return { workspaceId };\n};const emailConfig=function emailConfig(config) {\n  workspaceConfig(config.workspaceId);\n  for (const key of ['fromEmail', 'toEmail']) {\n    if (!/^[^\\s@,<>]+@[^\\s@,<>]+\\.[^\\s@,<>]+$/.test(config[key] || '') || config[key].includes('REPLACE')) throw new Error('Configure authorised internal sender and recipient before execution.');\n  }\n  return config;\n}; const config=emailConfig({workspaceId:'REPLACE_WORKSPACE_ID',fromEmail:'REPLACE_SENDER',toEmail:'REPLACE_INTERNAL_RECIPIENT'});return [{json:{...config,leaseToken:String($execution.id)}}];"
+      }
+    },
+    {
+      "id": "claim",
+      "name": "Claim pending notices",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM blocksignal.claim_notices($1,$2);",
+        "options": {
+          "queryReplacement": "={{ [$json.workspaceId,$json.leaseToken] }}"
+        }
+      }
+    },
+    {
+      "id": "next-notice",
+      "name": "Next notice",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        700,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "message",
+      "name": "Build evidence-linked email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const noticeMessage=function noticeMessage(notice) {\n  const p = notice.payload;\n  if (!p || !Array.isArray(p.changes) || !p.changes.length) throw new Error('Invalid durable notice.');\n  const clean = value => String(value ?? '').replace(/[\\r\\n\\0]/g, ' ').slice(0, 300);\n  const urgent = p.changes.some(c => c.priority === 'urgent_review');\n  return {\n    subject: `BlockSignal${urgent ? ' | Class C review' : ''} | ${clean(p.address)} | notice ${notice.id}`,\n    text: `Property: ${clean(p.address)}\\nHPD building ID: ${clean(p.buildingId)}\\nObserved: ${clean(p.observedAt)}\\nNotice ID: ${notice.id}\\n\\n` + p.changes.map(c =>\n      `${clean(c.kind)} | record ${clean(c.recordId)} | class ${clean(c.class)} | ${clean(c.status)}\\n${String(c.description || '').slice(0, 10000)}\\nSource: https://hpdonline.nyc.gov/hpdonline/`).join('\\n\\n') +\n      '\\n\\nReview the source before acting. Observation dates are not event dates. A record disappearing does not establish a completed repair. This report reflects HPD coverage only.',\n  };\n};const n=$input.first().json;return [{json:{...n,...noticeMessage(n)}}];"
+      }
+    },
+    {
+      "id": "send-internal-notice",
+      "name": "Send internal notice",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1180,
+        0
+      ],
+      "parameters": {
+        "operation": "send",
+        "fromEmail": "={{ $('Configuration').first().json.fromEmail }}",
+        "toEmail": "={{ $('Configuration').first().json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "accepted",
+      "name": "SMTP accepted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const deliveryAccepted=function deliveryAccepted(response, recipient) {\n  return !response?.error && Array.isArray(response?.accepted) && response.accepted.some(address => String(address).toLowerCase() === recipient.toLowerCase());\n};const n=$('Next notice').item.json;return [{json:{...n,sent:deliveryAccepted($input.first().json,$('Configuration').first().json.toEmail)}}];"
+      }
+    },
+    {
+      "id": "failed",
+      "name": "Delivery needs retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        220
+      ],
+      "parameters": {
+        "jsCode": "const n=$('Next notice').item.json;return [{json:{...n,sent:false}}];"
+      }
+    },
+    {
+      "id": "finish",
+      "name": "Persist delivery result",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1680,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT blocksignal.finish_notice($1,$2::bigint,$3,$4::boolean) AS result;",
+        "options": {
+          "queryReplacement": "={{ [$json.workspace,$json.id,$json.lease_token,$json.sent] }}"
+        }
+      }
+    },
+    {
+      "id": "setup-note",
+      "name": "Configure before publishing",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -300
+      ],
+      "parameters": {
+        "width": 980,
+        "height": 210,
+        "content": "## Internal delivery\nSet the same workspace ID, an authorised internal sender/recipient, SMTP and Postgres credentials. Notices survive collector success and mail failure. Five bounded delivery attempts; exhausted notices remain in the database for operator review. SMTP acceptance is not inbox delivery. A timeout/crash after sending can duplicate a notice: use its stable notice ID. This is at-least-once delivery, not exactly-once. Test in your own inbox before publishing."
+      }
+    }
+  ],
+  "connections": {
+    "Schedule": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual test": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Claim pending notices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim pending notices": {
+      "main": [
+        [
+          {
+            "node": "Next notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next notice": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Build evidence-linked email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build evidence-linked email": {
+      "main": [
+        [
+          {
+            "node": "Send internal notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send internal notice": {
+      "main": [
+        [
+          {
+            "node": "SMTP accepted",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delivery needs retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SMTP accepted": {
+      "main": [
+        [
+          {
+            "node": "Persist delivery result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delivery needs retry": {
+      "main": [
+        [
+          {
+            "node": "Persist delivery result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist delivery result": {
+      "main": [
+        [
+          {
+            "node": "Next notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York",
+    "executionTimeout": 1800,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {}
+}
