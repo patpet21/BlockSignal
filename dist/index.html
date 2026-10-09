@@ -1,63 +1,17 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Research NYC buildings with open HPD violations, review registered owners and agents, and build an annotated shortlist for your service area.">
-  <title>BlockSignal | NYC building research</title>
-  <link rel="stylesheet" href="style.css">
-</head>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="A source-linked NYC property workspace: explore real tax lots, review building records, prepare dossiers and track portfolio changes."><title>BlockSignal | NYC property workspace</title><link rel="stylesheet" href="vendor/leaflet.css"><link rel="stylesheet" href="style.css"></head>
 <body>
-  <aside>
-    <a class="brand" href="#">▥ <b>BlockSignal</b><span>NYC</span></a>
-    <div class="navlabel">YOUR RESEARCH WORKSPACE</div>
-    <nav><a href="#research" class="active">↗ Find buildings</a><a href="#shortlist">◇ Your shortlist</a><a href="#workflow">◷ How to use it</a></nav>
-    <div class="aside-bottom"><span class="dot"></span> Public records. Clear sources.<p>Research a building.<br>Verify the business opportunity.</p><a href="https://www.nyc.gov/site/hpd/about/open-data.page" target="_blank" rel="noopener">HPD data sources ↗</a></div>
-  </aside>
-  <main>
-    <header><span>BUILDING RESEARCH / NEW YORK CITY</span><span class="badge">RESEARCH PROTOTYPE</span></header>
-    <section id="research">
-      <div class="eyebrow">FOR NYC MAINTENANCE &amp; SERVICE BUSINESSES</div>
-      <h1>Find buildings.<br>Know <em>why they matter.</em></h1>
-      <p class="intro">Find open HPD records relevant to your trade and service area. Review the registered owner or agent, save useful buildings, and export your research with qualification notes.</p>
-      <div class="stats">
-        <div><span>01 / FILTER</span><strong>Search your trade</strong><small>Heating, pest control, painting</small></div>
-        <div><span>02 / REVIEW</span><strong>Check the evidence</strong><small>Violation text, dates, registered contacts</small></div>
-        <div><span>03 / ORGANIZE</span><strong>Build a shortlist</strong><small>Keep notes and export a usable CSV</small></div>
-      </div>
-      <div class="panel">
-        <div class="panel-head"><div><h2>Building finder</h2><p>Open records approved in the past 12 months · up to 100 buildings</p></div><span class="live">● NYC OPEN DATA</span></div>
-        <form id="search">
-          <label>Borough<select id="boro"><option>BROOKLYN</option><option>MANHATTAN</option><option>QUEENS</option><option>BRONX</option><option>STATEN ISLAND</option></select></label>
-          <label>Service<select id="service"><option value="all">All violations</option><option value="heat">Heating &amp; hot water</option><option value="pest">Pest control</option><option value="paint">Painting &amp; plaster</option></select></label>
-          <label>ZIP code (optional)<input id="zip" inputmode="numeric" pattern="[0-9]{5}" placeholder="e.g. 11206" maxlength="5"></label>
-          <button type="submit" id="run">Find buildings ↗</button>
-        </form>
-        <div class="toolbar"><span id="status" role="status" aria-live="polite">Search to load real NYC records.</span><div><button class="ghost" id="demo">Try an example</button><button class="ghost" id="export" disabled>↓ Export results</button></div></div>
-        <div class="table-wrap"><table><thead><tr><th>BUILDING</th><th>MATCHING RECORDS</th><th>CLASS C</th><th>LATEST APPROVAL</th><th></th></tr></thead><tbody id="rows"><tr><td colspan="5" class="empty"><span>⌕</span>Start with a trade and a neighborhood.<small>For example: pest control buildings in Brooklyn ZIP 11206.</small></td></tr></tbody></table></div>
-        <div class="note">Counts reflect your selected filters. Service matching uses keywords and needs manual review. An open violation does not establish purchase intent, budget, or a need for your specific service. HPD class C is a record classification.</div>
-      </div>
-      <div id="detail" class="panel detail" hidden aria-live="polite"></div>
-    </section>
-    <section id="shortlist">
-      <div class="eyebrow">TURN SEARCH RESULTS INTO RESEARCH YOU CAN USE</div>
-      <div class="section-title"><div><h2>Your building shortlist</h2><p>Saved on this browser. Export a copy to share or keep a backup.</p></div><button id="export-shortlist" disabled>↓ Export shortlist</button></div>
-      <div class="panel"><div id="saved-list" class="saved-list"></div></div>
-      <p id="saved-status" class="note" role="status" aria-live="polite"></p>
-    </section>
-    <section id="workflow">
-      <div class="eyebrow">WHAT THIS TOOL ACTUALLY DOES</div>
-      <h2>Less record hunting. More informed research.</h2>
-      <p class="intro">A pest control company can narrow down relevant buildings in its service area, inspect the underlying record, and look up the registered manager. BlockSignal brings those steps together. You still decide whether each building is worth pursuing.</p>
-      <div class="steps">
-        <article><b>01</b><h3>Match your service area</h3><p>Choose your trade and ZIP code. Results rank buildings by matching open records, not by their likelihood of buying.</p></article>
-        <article><b>02</b><h3>Verify before saving</h3><p>Read the actual violation. Confirm the owner or managing agent using HPD Online and a current business source. Registered mailing addresses are not verified sales contacts.</p></article>
-        <article><b>03</b><h3>Record your next step</h3><p>Save the building with a qualification note. Export the shortlist with sources and the contacts you reviewed. No outreach is sent by this app.</p></article>
-      </div>
-      <div class="panel explanation"><h3>A prototype, with a business hypothesis to test</h3><p>You could use this for your own prospect research or offer manually verified research reports to local service businesses. The underlying NYC data is free. Whether the saved time and better qualification are worth paying for has not been validated.</p><p>No payments, customer accounts, automated outreach, or guaranteed leads are included.</p></div>
-    </section>
-    <footer>BlockSignal · Independent tool. Not affiliated with NYC or HPD.<span>Shortlists are stored locally on your browser.</span></footer>
-  </main>
-  <script type="module" src="app.js"></script>
-</body>
-</html>
+<aside><a class="brand" href="#"><span class="brand-icon">▥</span> BlockSignal<span class="city">NYC</span></a><div class="nav-label">PROPERTY WORKSPACE</div><nav><a href="#explore">↗ Explore the map</a><a href="#dossier">▤ Property dossier</a><a href="#portfolio">◇ Saved portfolio</a><a href="#automation">⌁ Monitor & automate</a></nav><div class="side-note"><span class="dot"></span> Connected to public NYC data<p>Every signal has a source.<br>Every next step has an owner.</p><a href="https://github.com/patpet21/BlockSignal" target="_blank" rel="noopener">Source & documentation ↗</a></div></aside>
+<main><header><span>NYC PROPERTY INTELLIGENCE</span><span class="pill">ON-DEMAND PUBLIC DATA · LOCAL WORKSPACE</span></header>
+<section class="hero"><div><div class="eyebrow">FROM PROPERTY RECORDS TO YOUR NEXT STEP</div><h1>A clearer view.<br>A <em>better next move.</em></h1><p id="mode-description">See your buildings, review open HPD records, and track what changed since your last check.</p></div><div class="hero-note"><span>BUILT AROUND YOUR WORK</span><b id="mode-label">Property management</b><small>NYC records + your research.<br>No invented coordinates or sales predictions.</small></div></section>
+<div class="mode-tabs" role="group" aria-label="Workspace mode"><button data-mode="manager" class="selected">Property manager</button><button data-mode="broker">Multifamily broker</button><button data-mode="residential">Residential agent</button></div>
+<section id="explore"><div class="section-heading"><div><div class="eyebrow">01 / EXPLORE</div><h2>Your market, on a map.</h2></div><span class="source-badge">HPD + PLUTO</span></div>
+<form id="search" class="search-panel"><label>Search source<select id="search-type"><option value="violations">Open HPD records</option><option value="properties">Residential tax lots</option></select></label><label>Borough<select id="boro"><option>BROOKLYN</option><option>MANHATTAN</option><option>QUEENS</option><option>BRONX</option><option>STATEN ISLAND</option></select></label><label>ZIP code<input id="zip" placeholder="e.g. 11206" pattern="[0-9]{5}" maxlength="5" inputmode="numeric"></label><label id="service-field">Record topic<select id="service"><option value="all">All topics</option><option value="heat">Heat & hot water</option><option value="pest">Pests</option><option value="paint">Paint & plaster</option></select></label><label id="address-field" hidden>Address contains<input id="query" placeholder="e.g. MYRTLE AVENUE" maxlength="80"></label><label id="units-field" hidden>Residential units ≥<select id="min-units"><option>1</option><option>3</option><option>5</option><option>10</option><option>20</option></select></label><button id="run" type="submit">Explore properties ↗</button></form>
+<div id="search-status" class="status" role="status" aria-live="polite">Choose a borough and search. No example records are mixed into this workspace.</div>
+<div class="map-workspace"><div class="map-column"><div id="map" aria-label="Interactive map of NYC properties"></div><div class="map-key"><span><i class="red"></i> Matching class C records</span><span><i class="orange"></i> Other matching open records</span><span><i class="gray"></i> Property records — HPD status not checked</span></div><p id="map-status">Pins use PLUTO tax-lot coordinates, not building entrances. Missing coordinates are not guessed.</p></div><div class="results-panel"><div class="results-heading"><h3>Properties <span id="result-count">0</span></h3><button id="export-results" class="ghost" disabled>↓ CSV</button></div><div id="results"><div class="empty">Search your area.<small>Click a property to open its source-linked dossier.</small></div></div></div></div>
+<div class="sources-strip"><span>HPD searches: open records approved in the last 12 months, maximum 100 buildings.</span><span>Property searches: up to 100 residential tax lots, ordered by address. Results are not a complete market inventory.</span></div></section>
+<section id="dossier" hidden><div class="section-heading"><div><div class="eyebrow">02 / UNDERSTAND</div><h2>Property dossier</h2></div><div class="actions"><button id="save-property" disabled>+ Save property</button><button id="export-dossier" class="ghost" disabled>↓ Print-ready dossier</button></div></div><div id="dossier-content" class="panel" role="status" aria-live="polite"></div></section>
+<section id="portfolio"><div class="section-heading"><div><div class="eyebrow">03 / ACT</div><h2 id="portfolio-title">Your managed portfolio</h2></div><div class="actions"><button id="refresh-portfolio" disabled>↻ Check for changes</button><button id="export-portfolio" class="ghost" disabled>↓ Export CSV</button></div></div><p class="section-intro">Save properties, name the responsible person and record the next action. Stored in this browser; this version does not synchronize a team.</p><div id="portfolio-status" class="status" role="status" aria-live="polite"></div><div class="portfolio-grid"><div id="saved-list" class="panel"><div class="empty">No saved properties yet.</div></div><div class="activity-panel panel"><h3>Changes since your last check</h3><p>First check establishes a baseline. Later checks compare complete open HPD snapshots.</p><div id="activity"><div class="empty">No comparisons yet.<small>Changes appear only after two successful checks.</small></div></div></div></div></section>
+<section id="automation"><div class="section-heading"><div><div class="eyebrow">04 / STAY INFORMED</div><h2>Keep the workflow moving.</h2></div><span class="source-badge">n8n EXPORT</span></div><div class="automation-grid"><article class="panel"><span class="feature-number">01</span><h3>A monitor for your saved properties</h3><p>Export an n8n workflow containing the HPD building IDs you actually saved. It checks records, compares the previous snapshot and produces a change report.</p><button id="export-n8n" disabled>↓ Export n8n monitor</button><p id="automation-status" class="status" role="status" aria-live="polite">Not connected. Import and publish the workflow in your own n8n instance to schedule it.</p></article><article class="panel"><span class="feature-number">02</span><h3>Evidence you can share</h3><p>Export a dated property dossier with tax-lot characteristics, registered contacts, open HPD records and ACRIS documents when available. Open it in a browser to print or save as PDF.</p><p class="fine-print">ACRIS document amounts are not market valuations. HPD coverage is limited. No listing feed, seller intent prediction, or beneficial-owner verification is provided.</p></article></div></section>
+<footer><span>Independent tool. Not affiliated with NYC, HPD or any real estate association.</span><span>HPD · PLUTO · ACRIS · <a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Report a map issue</a></span></footer>
+</main><script src="vendor/leaflet.js"></script><script type="module" src="app.js"></script></body></html>

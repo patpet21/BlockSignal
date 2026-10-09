@@ -1,0 +1,46 @@
+// No external state: the same comparator is used in the browser and exported n8n workflow.
+export function compareSnapshot(previous, current) {
+  if (!Array.isArray(current) || current.length > 1000 || current.some(r => !/^\d+$/.test(String(r.violationid || '')))) throw new Error('Incomplete or invalid snapshot; previous baseline retained.');
+  const summarize = row => ({ id: row.violationid, buildingId: row.buildingid, class: row.class, status: row.currentstatus, statusDate: row.currentstatusdate, approvedDate: row.approveddate, description: row.novdescription });
+  const snapshot = Object.fromEntries(current.map(row => [row.violationid, summarize(row)]));
+  if (Object.keys(snapshot).length !== current.length) throw new Error('Duplicate record IDs; previous baseline retained.');
+  if (previous == null) return { snapshot, baseline: true, events: [] };
+  const events = [];
+  for (const [id, row] of Object.entries(snapshot)) {
+    const before = previous[id];
+    if (!before) events.push({ type: 'Newly observed open record', ...row });
+    else if (row.class !== before.class || row.status !== before.status || row.statusDate !== before.statusDate) events.push({ type: 'Record status updated', ...row, previousStatus: before.status });
+  }
+  for (const [id, row] of Object.entries(previous)) if (!snapshot[id]) events.push({ type: 'No longer returned as open — verify with HPD', ...row });
+  return { snapshot, baseline: false, events };
+}
+
+export function buildMonitorWorkflow(saved) {
+  const buildings = saved.flatMap(item => item.record.hpdBuildings || (item.record.buildingid ? [{ buildingid: item.record.buildingid }] : []));
+  const ids = [...new Set(buildings.map(b => b.buildingid).filter(id => /^\d+$/.test(id)))].sort();
+  if (!ids.length) throw new Error('Open a dossier and save a property with a matched HPD building first.');
+  if (ids.length > 25) throw new Error('This monitor supports up to 25 HPD building IDs per workflow. Select a smaller portfolio.');
+  const config = { ids, addresses: Object.fromEntries(saved.flatMap(item => (item.record.hpdBuildings || []).map(b => [b.buildingid, item.record.pluto?.address || [b.housenumber, b.streetname].filter(Boolean).join(' ')]))) };
+  const code = `const config=${JSON.stringify(config)}; const params={'$where':\"buildingid in(\"+config.ids.map(id=>\"'\"+id+\"'\").join(',')+\") AND violationstatus='Open'\",'$limit':'1001','$order':'violationid ASC'};const query=Object.entries(params).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');return [{json:{config,url:'https://data.cityofnewyork.us/resource/wvxf-dwi5.json?'+query}}];`;
+  const compareCode = `const compareSnapshot=${compareSnapshot.toString()};\nconst config=$('Portfolio configuration').first().json.config; const input=$input.all(); if(input.length!==1)throw new Error('Unexpected NYC response; baseline retained'); const response=input[0].json; if(response.statusCode!==200||!Array.isArray(response.body))throw new Error('Unexpected NYC response; baseline retained'); const rows=response.body; if(rows.some(r=>!r||!r.violationid))throw new Error('Unexpected NYC response; baseline retained'); const state=$getWorkflowStaticData('global'); const key=config.ids.join(','); const previous=state.scope===key?state.snapshot:null; const result=compareSnapshot(previous,rows); state.scope=key;state.snapshot=result.snapshot;state.checkedAt=new Date().toISOString();return [{json:{baseline:result.baseline,checkedAt:state.checkedAt,buildingIds:config.ids,changes:result.events.map(e=>({...e,address:config.addresses[e.buildingId]||'',source:'https://hpdonline.nyc.gov/hpdonline/'})),source:'NYC HPD',note:result.baseline?'Baseline established. No historical changes inferred.':'A record disappearing from the open query requires verification, not a claim that repairs are complete.'}}];`;
+  return {
+    name: 'BlockSignal — saved portfolio monitor', active: false,
+    nodes: [
+      { id: 'manual', name: 'Manual test', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, position: [0, 0], parameters: {} },
+      { id: 'schedule', name: 'Daily at 7 AM New York', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2, position: [0, 220], parameters: { rule: { interval: [{ field: 'cronExpression', expression: '0 7 * * *' }] } } },
+      { id: 'config', name: 'Portfolio configuration', type: 'n8n-nodes-base.code', typeVersion: 2, position: [240, 100], parameters: { jsCode: code } },
+      { id: 'request', name: 'Fetch complete HPD open snapshot', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [480, 100], parameters: { url: '={{ $json.url }}', options: { timeout: 45000, response: { response: { responseFormat: 'json', fullResponse: true } } } } },
+      { id: 'diff', name: 'Compare with saved baseline', type: 'n8n-nodes-base.code', typeVersion: 2, position: [720, 100], parameters: { jsCode: compareCode } },
+      { id: 'output', name: 'Changes only — attach your notification here', type: 'n8n-nodes-base.code', typeVersion: 2, position: [960, 100], parameters: { jsCode: 'const report=$input.first().json; return report.changes.length ? [{json:report}] : [];' } },
+      { id: 'notes', name: 'Setup and limits', type: 'n8n-nodes-base.stickyNote', typeVersion: 1, position: [160, -260], parameters: { width: 900, height: 210, content: '## BlockSignal portfolio monitor\nImport, review the real HPD IDs, test the request, then publish to enable the schedule. Static baseline data persists only on successful published executions; manual tests do not persist it. First run establishes a baseline. No notification credentials or recipients are configured. Attach your own notification node after Changes only. Maximum 25 buildings / 1,000 open records: overflow fails instead of reporting false removals. For production teams, replace experimental workflow static data with a durable database and concurrency control.' } },
+    ],
+    connections: {
+      'Manual test': { main: [[{ node: 'Portfolio configuration', type: 'main', index: 0 }]] },
+      'Daily at 7 AM New York': { main: [[{ node: 'Portfolio configuration', type: 'main', index: 0 }]] },
+      'Portfolio configuration': { main: [[{ node: 'Fetch complete HPD open snapshot', type: 'main', index: 0 }]] },
+      'Fetch complete HPD open snapshot': { main: [[{ node: 'Compare with saved baseline', type: 'main', index: 0 }]] },
+      'Compare with saved baseline': { main: [[{ node: 'Changes only — attach your notification here', type: 'main', index: 0 }]] },
+    },
+    settings: { executionOrder: 'v1', timezone: 'America/New_York' }, pinData: {},
+  };
+}

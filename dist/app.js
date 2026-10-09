@@ -1,130 +1,104 @@
-import { buildWhere, groupedQuery, datasetUrl, csv, shortlistCsv, contactName, contactAddress, VIOLATIONS_SOURCE } from './research.js';
+import { csv, contactName, contactAddress } from './research.js';
+import { SOURCES, escapeHTML as esc, address, recordKey, validCoordinates, findBuildings, findProperties, loadDossier, openSnapshot, resolveBuildings } from './urban.js';
+import { compareSnapshot, buildMonitorWorkflow } from './monitor.js';
 
 const $ = id => document.getElementById(id);
-const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const fmt = value => value == null || value === '' ? '—' : new Intl.NumberFormat('en-US').format(Number(value));
 const date = value => value ? new Date(value).toLocaleDateString('en-US', { timeZone: 'UTC' }) : '—';
-const STORAGE_KEY = 'blocksignal-shortlist-v1';
-const QUALIFICATIONS = ['Needs review', 'Relevant — contact unverified', 'Relevant — contact verified', 'Not a fit'];
-let records = [], context = {}, isDemo = false, searching = false, detailRequest = 0, currentDetail = null, shortlist = [];
-try {
-  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  if (Array.isArray(stored)) shortlist = stored.filter(item => item?.record?.buildingid && item.context).map(item => ({ ...item, status: QUALIFICATIONS.includes(item.status) ? item.status : QUALIFICATIONS[0], notes: String(item.notes || '') }));
-} catch { $('saved-status').textContent = 'Browser storage is unavailable or could not be read. Export your shortlist before closing.'; }
+const STORE = 'blocksignal-workspace-v2';
+const modes = {
+  manager: { label: 'Property management', description: 'See your buildings, review open HPD records, and track what changed since your last check.', portfolio: 'Your managed portfolio', type: 'violations', units: '1' },
+  broker: { label: 'Multifamily brokerage', description: 'Explore multifamily tax lots, understand the registered ownership and review documents before your next conversation.', portfolio: 'Your acquisition research', type: 'properties', units: '3' },
+  residential: { label: 'Residential agency', description: 'Prepare a dated property dossier for client research and appointments, with source-linked building facts and documents.', portfolio: 'Your client research', type: 'properties', units: '1' },
+};
+const stages = ['Review', 'Action needed', 'In progress', 'Completed'];
+let mode = 'manager', records = [], saved = [], activity = [], dossier = null, context = {}, requestNumber = 0, busy = false, monitoring = false;
+try { const state = JSON.parse(localStorage.getItem(STORE) || '{}'); saved = Array.isArray(state.saved) ? state.saved.filter(i => i?.record && (i.record.buildingid || i.record.bbl)) : []; activity = Array.isArray(state.activity) ? state.activity.slice(0, 100) : []; if (!localStorage.getItem(STORE)) { const old = JSON.parse(localStorage.getItem('blocksignal-shortlist-v1') || '[]'); if (Array.isArray(old)) saved = old.filter(i => /^\d+$/.test(i?.record?.buildingid || '')).map(i => ({ record: { ...i.record, key: 'building:' + i.record.buildingid, hpdBuildings: [{ buildingid: i.record.buildingid, registrationid: i.record.registrationid }] }, contacts: i.contacts || [], savedAt: i.savedAt, notes: i.notes || '', mode: 'manager', stage: 'Review' })); } }
+catch { $('portfolio-status').textContent = 'Browser storage could not be read. Export your work before closing.'; }
+const map = window.L?.map('map').setView([40.702, -73.94], 12);
+const pins = map ? window.L.layerGroup().addTo(map) : null;
+const markers = new Map();
+if (map) window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+else $('map').textContent = 'Map library unavailable. Property records remain available below.';
 
-async function api(dataset, params) {
-  const response = await fetch(datasetUrl(dataset, params), { signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`NYC Open Data returned HTTP ${response.status}.`);
-  const data = await response.json();
-  if (!Array.isArray(data)) throw new Error('Unexpected response from NYC Open Data.');
-  return data;
-}
-
-function saveShortlist() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(shortlist)); $('saved-status').textContent = 'Shortlist saved on this browser.'; }
-  catch { $('saved-status').textContent = 'Could not save to browser storage. Export your shortlist before closing.'; }
-}
+function persist() { try { localStorage.setItem(STORE, JSON.stringify({ saved, activity })); } catch { $('portfolio-status').textContent = 'Storage is full or unavailable. Export your work before closing.'; } }
+function download(filename, body, type) { const url = URL.createObjectURL(new Blob([body], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+function filterFields() { const property = $('search-type').value === 'properties'; $('service-field').hidden = property; $('address-field').hidden = !property; $('units-field').hidden = !property; }
+function switchMode(next) { mode = next; const info = modes[mode]; $('mode-label').textContent = info.label; $('mode-description').textContent = info.description; $('portfolio-title').textContent = info.portfolio; $('search-type').value = info.type; $('min-units').value = info.units; document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('selected', b.dataset.mode === mode)); filterFields(); if (records.length) $('search-status').textContent = `Displayed results are from your previous ${context.type === 'violations' ? 'HPD' : 'PLUTO'} search in ${context.boro}${context.zip ? ' / ' + context.zip : ''}. Run Explore properties to apply this mode's filters. ${context.warning || ''}`; }
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => switchMode(b.dataset.mode));
+$('search-type').onchange = filterFields;
 
 function renderResults() {
-  $('rows').innerHTML = records.length ? records.map((record, index) => `<tr><td><b>${esc(record.housenumber)} ${esc(record.streetname)}</b><small>${esc(record.boro)} · ${esc(record.zip)} · ID ${esc(record.buildingid)}</small></td><td class="count">${esc(record.total)}</td><td><span class="danger">${esc(record.class_c)}</span></td><td>${date(record.latest)}</td><td><button class="ghost" data-index="${index}">Review ↗</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">No buildings matched these filters. Try another ZIP code or service.</td></tr>';
-  $('export').disabled = !records.length;
-  $('detail').hidden = true;
-  currentDetail = null;
-  detailRequest++;
+  $('result-count').textContent = records.length; $('export-results').disabled = !records.length;
+  $('results').innerHTML = records.length ? records.map((r, i) => `<button class="result" data-index="${i}"><b>${esc(address(r))}</b><small>${esc(r.boro)} · ${esc(r.zip || r.pluto?.zipcode)}${r.bbl ? ' · BBL ' + esc(r.bbl) : ''}</small><div class="result-meta">${r.total != null ? `<span class="tag alert">${fmt(r.total)} matching open records</span><span class="tag">${fmt(r.class_c)} class C</span>` : '<span class="tag">HPD status not checked</span>'}${r.pluto ? `<span class="tag">${fmt(r.pluto.unitsres)} residential units / lot</span>` : '<span class="tag">Lot data unavailable</span>'}</div>${r.pluto?.ownername ? `<small>Tax-roll name: ${esc(r.pluto.ownername)}</small>` : ''}</button>`).join('') : '<div class="empty">No properties found for these filters.</div>';
+  if (!map) return;
+  pins.clearLayers(); markers.clear(); const bounds = [];
+  records.forEach((r, i) => { const point = validCoordinates(r.pluto); if (!point) return; bounds.push(point); const color = Number(r.class_c) > 0 ? '#c4523e' : r.total != null ? '#cc973f' : '#67847b'; const marker = window.L.circleMarker(point, { radius: Number(r.class_c) > 10 ? 10 : 7, color: 'white', weight: 2, fillColor: color, fillOpacity: .95 }).addTo(pins).bindTooltip(esc(address(r))); marker.on('click', () => openRecord(i)); markers.set(i, marker); });
+  if (bounds.length) map.fitBounds(bounds, { padding: [35, 35], maxZoom: 15 });
+  $('map-status').textContent = `${bounds.length} of ${records.length} results mapped using official PLUTO tax-lot coordinates. ${records.length - bounds.length} missing coordinates. Pins are not building entrances.`;
 }
 
-function renderShortlist() {
-  $('export-shortlist').disabled = !shortlist.length;
-  $('saved-list').innerHTML = shortlist.length ? shortlist.map((item, index) => `<article class="saved-item"><div class="saved-heading"><div><h3>${esc(item.record.housenumber)} ${esc(item.record.streetname)}</h3><p>${esc(item.record.boro)} · ${esc(item.context.serviceLabel)} · ${esc(item.record.total)} matching records at time of search · saved ${date(item.savedAt)}</p></div><button class="ghost" data-remove="${index}">Remove</button></div><div class="saved-fields"><label>Qualification<select data-qualification="${index}">${QUALIFICATIONS.map(value => `<option${item.status === value ? ' selected' : ''}>${esc(value)}</option>`).join('')}</select></label><label>Research notes<textarea data-notes="${index}" placeholder="Why is this relevant? What did you verify? What is the next step?">${esc(item.notes)}</textarea></label></div><small>${item.contacts?.length ? `${item.contacts.length} registered contact(s) included in export. Verify they are current.` : 'No registered contacts loaded for this saved building.'}</small></article>`).join('') : '<div class="empty">No buildings saved yet.<small>Review a search result, then add it to your shortlist.</small></div>';
+$('search').onsubmit = async event => {
+  event.preventDefault(); if (busy) return; busy = true; $('run').disabled = true;
+  document.querySelectorAll('[data-mode]').forEach(button => button.disabled = true);
+  const input = { boro: $('boro').value, zip: $('zip').value.trim(), service: $('service').value, query: $('query').value.trim(), minUnits: $('min-units').value };
+  $('search-status').textContent = 'Loading real NYC property records…';
+  try { const type = $('search-type').value; let warning = ''; if (type === 'violations') { const result = await findBuildings(input); records = result.records; warning = result.warning; } else records = await findProperties(input); context = { ...input, type, warning, searchedAt: new Date().toISOString(), mode }; renderResults(); $('search-status').textContent = `${records.length} ${type === 'violations' ? 'HPD building' : 'PLUTO property'} results · fetched ${new Date().toLocaleString('en-US')}. ${warning}`; }
+  catch (error) { $('search-status').textContent = `Search failed. Previous results remain unchanged. ${error.message}`; }
+  finally { busy = false; $('run').disabled = false; document.querySelectorAll('[data-mode]').forEach(button => button.disabled = false); }
+};
+$('results').onclick = event => { const button = event.target.closest('[data-index]'); if (button) openRecord(Number(button.dataset.index)); };
+
+function dossierHTML(d) {
+  const r = d.record, p = r.pluto || {}, open = d.violations, classC = open?.filter(v => v.class === 'C').length;
+  return `<div class="property-title">${esc(address(r))}</div><div class="property-subtitle">${esc(r.boro)} · ZIP ${esc(r.zip || p.zipcode)} · BBL ${esc(r.bbl || 'unavailable')} · checked ${esc(new Date(d.checkedAt).toLocaleString('en-US'))}</div><div class="metric-grid"><div class="metric"><span>RESIDENTIAL UNITS</span><b>${fmt(p.unitsres)}</b><small>PLUTO tax-lot total</small></div><div class="metric"><span>YEAR BUILT</span><b>${p.yearbuilt && Number(p.yearbuilt) > 0 ? esc(p.yearbuilt) : '—'}</b><small>PLUTO reported value</small></div><div class="metric"><span>ALL OPEN HPD RECORDS</span><b>${d.buildings.length && open ? fmt(open.length) : '—'}</b><small>${d.buildings.length ? 'Matched buildings / all dates' : 'No matched HPD registration'}</small></div><div class="metric"><span>CLASS C RECORDS</span><b>${d.buildings.length && open ? fmt(classC) : '—'}</b><small>HPD classification</small></div></div>${d.errors.length ? `<div class="warning">Some sources failed: ${d.errors.map(esc).join(' · ')}. Missing data is not a clean record.</div>` : ''}<div class="dossier-grid"><div><div class="dossier-section"><h3>Tax-lot facts</h3><p><b>Tax-roll owner name:</b> ${esc(p.ownername || 'Unavailable')}<br><b>Building area:</b> ${fmt(p.bldgarea)} sq ft / lot<br><b>Lot area:</b> ${fmt(p.lotarea)} sq ft<br><b>Building class:</b> ${esc(p.bldgclass || 'Unavailable')}<br><b>Zoning:</b> ${esc(p.zonedist1 || 'Unavailable')}<br><b>PLUTO version:</b> ${esc(p.version || 'Unavailable')}</p><p>Tax-lot figures can cover multiple buildings. A tax-roll entity name is not a verified beneficial owner.</p></div><div class="dossier-section"><h3>Registered contacts</h3><div class="scroll-records">${d.contacts.length ? d.contacts.map(c => `<div class="record"><b>${esc(contactName(c))}</b><p>${esc(c.type)} · registration ${esc(c.registrationid)}<br>${esc(contactAddress(c))}</p></div>`).join('') : '<p>No registered contacts returned. This does not mean the property has no owner or manager.</p>'}</div></div></div><div><div class="dossier-section"><h3>Recent recorded documents</h3><div class="scroll-records">${d.acris.documents.map(doc => `<div class="record"><div class="record-top">${esc(doc.doc_type)} · recorded ${date(doc.recorded_datetime)}</div><p><b>${esc(doc.document_id)}</b><br>Document amount: ${doc.document_amt == null ? 'Unavailable' : '$' + fmt(doc.document_amt)}<br>Document date: ${date(doc.document_date)}</p></div>`).join('') || '<p>No document results available.</p>'}</div><p>${esc(d.acris.note)}</p></div></div></div><div class="dossier-section"><h3>Open HPD records · all dates</h3><div class="scroll-records">${!d.buildings.length ? '<p>No active HPD building registration matched this tax lot. HPD is not a complete record of every NYC property; consult DOB and other sources.</p>' : open === null ? '<p>Snapshot unavailable. Monitoring baseline has not been changed.</p>' : open.slice(0, 50).map(v => `<div class="record"><div class="record-top">CLASS ${esc(v.class)} · ID ${esc(v.violationid)} · approved ${date(v.approveddate)}</div><p>${esc(v.novdescription)}</p><small>Current status: ${esc(v.currentstatus)} · original correction date in source: ${date(v.originalcorrectbydate)}</small></div>`).join('') || '<p>No open HPD records returned for the matched buildings at this check. This is not a certification of compliance.</p>'}</div>${open?.length > 50 ? `<p>Showing 50 of ${open.length} records. The complete snapshot is used for monitoring.</p>` : ''}</div><div class="source-links"><a href="${SOURCES.pluto}" target="_blank" rel="noopener">PLUTO source ↗</a><a href="https://hpdonline.nyc.gov/hpdonline/" target="_blank" rel="noopener">HPD Online ↗</a><a href="${SOURCES.acris}" target="_blank" rel="noopener">ACRIS search ↗</a><a href="https://a810-dobnow.nyc.gov/" target="_blank" rel="noopener">DOB records ↗</a></div><p class="fine-print">Public records can lag real conditions. Original correction dates are source values, not verified current deadlines. Documents and conditions require review. This dossier does not establish seller intent, market value, or building compliance.</p>`;
 }
 
-$('search').addEventListener('submit', async event => {
-  event.preventDefault();
-  if (searching) return;
-  const nextContext = { boro: $('boro').value, service: $('service').value, serviceLabel: $('service').selectedOptions[0].text, zip: $('zip').value.trim(), searchedAt: new Date().toISOString() };
-  let where;
-  try { where = buildWhere(nextContext); } catch (error) { $('status').textContent = error.message; return; }
-  searching = true;
-  $('run').disabled = true;
-  $('demo').disabled = true;
-  $('status').textContent = 'Loading matching HPD records…';
+async function openRecord(index, supplied) {
+  const r = supplied || records[index]; if (!r) return; const request = ++requestNumber; dossier = null;
+  $('dossier').hidden = false; $('save-property').disabled = true; $('save-property').textContent = '+ Save property'; $('export-dossier').disabled = true;
+  $('dossier-content').innerHTML = `<div class="property-title">${esc(address(r))}</div><p>Loading the matched building records and source documents…</p>`;
+  document.querySelectorAll('.result').forEach(b => b.classList.toggle('active', Number(b.dataset.index) === index));
+  const marker = markers.get(index); if (marker) map.panTo(marker.getLatLng());
+  $('dossier').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try { const d = await loadDossier(r); if (request !== requestNumber) return; dossier = d; $('dossier-content').innerHTML = dossierHTML(d); $('save-property').disabled = false; $('export-dossier').disabled = false; }
+  catch (error) { if (request === requestNumber) $('dossier-content').innerHTML += `<p class="warning">Dossier lookup failed: ${esc(error.message)}. Retry or use official sources.</p>`; }
+}
+
+function renderSaved() {
+  $('refresh-portfolio').disabled = monitoring || !saved.length; $('export-portfolio').disabled = !saved.length;
+  const ids = saved.flatMap(i => i.record.hpdBuildings || []).map(b => b.buildingid); $('export-n8n').disabled = !ids.length;
+  $('saved-list').innerHTML = saved.length ? saved.map((item, i) => `<article class="saved-item"><div class="saved-heading"><div><h3>${esc(address(item.record))}</h3><p>${esc(item.record.boro)} · ${esc(modes[item.mode || 'manager']?.label || 'Saved research')} · saved ${date(item.savedAt)}</p></div><div class="actions"><button class="ghost" data-open="${i}">Dossier</button><button class="ghost" data-remove="${i}">Remove</button></div></div><div class="saved-fields"><label>Workflow stage<select data-field="stage" data-saved="${i}">${stages.map(s => `<option${item.stage === s ? ' selected' : ''}>${s}</option>`).join('')}</select></label><label>Responsible person<input data-field="responsible" data-saved="${i}" value="${esc(item.responsible || '')}" placeholder="Assign a name"></label><label>Next check / action date<input type="date" data-field="due" data-saved="${i}" value="${esc(item.due || '')}"></label><label>Reference<input data-field="reference" data-saved="${i}" value="${esc(item.reference || '')}" placeholder="Client / portfolio reference"></label><label class="wide">Next step and verification notes<textarea data-field="notes" data-saved="${i}" placeholder="What changed? What did you verify? What needs to happen next?">${esc(item.notes || '')}</textarea></label></div><div class="saved-status">${item.checkedAt ? 'Last HPD comparison: ' + esc(new Date(item.checkedAt).toLocaleString('en-US')) : 'No monitoring baseline yet.'} · ${item.record.hpdBuildings?.length || 0} matched HPD building(s)</div></article>`).join('') : '<div class="empty">Save a property from its dossier.<small>Research notes and action assignments will appear here.</small></div>';
+  $('activity').innerHTML = activity.length ? activity.slice(0, 50).map(e => `<div class="event"><b>${esc(e.type)}</b><p>${esc(e.address)} · record ${esc(e.id)} · class ${esc(e.class)}<br>${esc(e.status || '')}</p><small>Observed ${esc(new Date(e.observedAt).toLocaleString('en-US'))}</small></div>`).join('') : '<div class="empty">No observed changes yet.<small>First check establishes a baseline.</small></div>';
+}
+
+$('save-property').onclick = () => { if (!dossier) return; const key = recordKey(dossier.record), index = saved.findIndex(item => recordKey(item.record) === key), previous = index >= 0 ? saved[index] : {}; const item = { ...previous, record: dossier.record, contacts: dossier.contacts, savedAt: previous.savedAt || new Date().toISOString(), mode, stage: previous.stage || 'Review', notes: previous.notes || '' }; if (index >= 0) saved[index] = item; else saved.push(item); persist(); renderSaved(); $('save-property').textContent = 'Saved to workspace'; $('portfolio-status').textContent = 'Property saved locally. Establish a baseline with Check for changes.'; };
+$('saved-list').addEventListener('input', event => { const i = event.target.dataset.saved, field = event.target.dataset.field; if (i == null || !['responsible', 'due', 'reference', 'notes'].includes(field)) return; saved[Number(i)][field] = event.target.value; persist(); });
+$('saved-list').addEventListener('change', event => { if (event.target.dataset.field !== 'stage') return; saved[Number(event.target.dataset.saved)].stage = event.target.value; persist(); });
+$('saved-list').onclick = event => { const open = event.target.closest('[data-open]'), remove = event.target.closest('[data-remove]'); if (open) return openRecord(-1, saved[Number(open.dataset.open)].record); if (!remove) return; const index = Number(remove.dataset.remove), item = saved.splice(index, 1)[0]; persist(); renderSaved(); $('portfolio-status').textContent = 'Property removed. '; const undo = document.createElement('button'); undo.className = 'ghost'; undo.textContent = 'Undo'; undo.onclick = () => { saved.splice(Math.min(index, saved.length), 0, item); persist(); renderSaved(); $('portfolio-status').textContent = 'Property restored.'; }; $('portfolio-status').append(undo); };
+
+$('refresh-portfolio').onclick = async () => {
+  if (monitoring) return;
+  monitoring = true; $('refresh-portfolio').disabled = true; let checked = 0, changes = 0, failures = 0;
   try {
-    const data = await api('wvxf-dwi5', groupedQuery(where));
-    records = data; context = { ...nextContext, where }; isDemo = false;
-    renderResults();
-    $('status').textContent = `${records.length} buildings · real NYC data · fetched ${new Date().toLocaleString('en-US')}`;
-  } catch (error) { $('status').textContent = `Search failed. Previous results, if any, remain unchanged. ${error.message} Try again or use the example.`; }
-  finally { searching = false; $('run').disabled = false; $('demo').disabled = false; }
-});
-
-$('demo').onclick = () => {
-  isDemo = true; context = { boro: 'DEMO', serviceLabel: 'Illustrative example' };
-  records = [{ buildingid: 'DEMO-01', boro: 'BROOKLYN — FICTIONAL', housenumber: '120', streetname: 'EXAMPLE AVENUE', zip: '11206', total: '12', class_c: '3', latest: '2026-09-18' }, { buildingid: 'DEMO-02', boro: 'BROOKLYN — FICTIONAL', housenumber: '45', streetname: 'SAMPLE STREET', zip: '11221', total: '8', class_c: '1', latest: '2026-09-12' }];
-  renderResults();
-  $('status').textContent = 'Illustrative example. Fictional addresses, not real prospects.';
+  for (const item of saved.slice(0, 25)) {
+    $('portfolio-status').textContent = `Checking ${address(item.record)}…`;
+    try {
+      const buildings = await resolveBuildings(item.record); if (!buildings.length) { failures++; continue; }
+      const rows = await openSnapshot(buildings); const scope = buildings.map(b => b.buildingid).sort().join(','); const result = compareSnapshot(item.snapshotScope === scope ? item.snapshot : null, rows);
+      item.record.hpdBuildings = buildings; item.snapshotScope = scope; item.snapshot = result.snapshot; item.checkedAt = new Date().toISOString();
+      activity.unshift(...result.events.map(e => ({ ...e, address: address(item.record), observedAt: item.checkedAt }))); changes += result.events.length; checked++; activity = activity.slice(0, 100); persist();
+    } catch { failures++; }
+  }
+  } finally {
+    monitoring = false;
+    renderSaved();
+  }
+  $('portfolio-status').textContent = `${checked} properties checked · ${changes} changes observed · ${failures} unavailable or without matched HPD buildings.${saved.length > 25 ? ' Only the first 25 saved properties were checked.' : ''} First checks establish baselines; source failures never replace them.`;
 };
 
-$('rows').onclick = async event => {
-  const button = event.target.closest('[data-index]');
-  if (!button) return;
-  const record = records[Number(button.dataset.index)], box = $('detail'), request = ++detailRequest;
-  currentDetail = null;
-  box.hidden = false;
-  box.innerHTML = `<h2>${esc(record.housenumber)} ${esc(record.streetname)}</h2><p>${isDemo ? 'Fictional example. This building cannot be added to your real shortlist.' : 'Loading registered contacts and matching records…'}</p>`;
-  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  if (isDemo) return;
-  const detailContext = { ...context };
-  const [contactResult, violationResult] = await Promise.allSettled([
-    /^\d+$/.test(record.registrationid || '') ? api('feu5-w2e2', { where: `registrationid='${record.registrationid}'`, limit: '30' }) : Promise.resolve([]),
-    api('wvxf-dwi5', { where: `${detailContext.where} AND buildingid='${record.buildingid}'`, order: 'approveddate DESC', limit: '5' }),
-  ]);
-  if (request !== detailRequest) return;
-  const contacts = contactResult.status === 'fulfilled' ? contactResult.value : [];
-  const violations = violationResult.status === 'fulfilled' ? violationResult.value : [];
-  currentDetail = { record: { ...record }, context: detailContext, contacts };
-  box.innerHTML = `<div class="detail-heading"><h2>${esc(record.housenumber)} ${esc(record.streetname)}</h2><button id="save-building">${shortlist.some(item => item.record.buildingid === record.buildingid) ? 'Update saved research' : '+ Add to shortlist'}</button></div><p><a href="https://hpdonline.nyc.gov/hpdonline/" target="_blank" rel="noopener">Verify on HPD Online ↗</a> · Building ID ${esc(record.buildingid)}</p><h3>Registered owner / agent information</h3>${contactResult.status === 'rejected' ? '<p>Contact lookup failed. You can save the building and verify contacts manually.</p>' : contacts.length ? contacts.map(contact => `<p><b>${esc(contactName(contact))}</b> · ${esc(contact.type)}<br>${esc(contactAddress(contact))}</p>`).join('') : '<p>No contacts were found for this registration.</p>'}<h3>Latest 5 matching open records</h3>${violationResult.status === 'rejected' ? '<p>Record details could not be loaded. Check HPD Online before qualifying this building.</p>' : violations.map(violation => `<p><b>Class ${esc(violation.class)} · approved ${date(violation.approveddate)}</b><br>${esc(violation.novdescription)}</p>`).join('') || '<p>No matching record details are currently available.</p>'}<p class="note">The registered mailing address is not a verified commercial contact channel. Confirm the contact and the record status before taking action.</p>`;
-};
-
-$('detail').onclick = event => {
-  if (!event.target.closest('#save-building') || !currentDetail) return;
-  const existing = shortlist.findIndex(item => item.record.buildingid === currentDetail.record.buildingid);
-  const previous = existing >= 0 ? shortlist[existing] : null;
-  const item = { ...currentDetail, savedAt: new Date().toISOString(), status: previous?.status || QUALIFICATIONS[0], notes: previous?.notes || '' };
-  if (existing >= 0) { if (!item.contacts.length && previous.contacts?.length) item.contacts = previous.contacts; shortlist[existing] = item; }
-  else shortlist.push(item);
-  saveShortlist(); renderShortlist();
-  event.target.textContent = 'Saved — update research';
-};
-
-$('saved-list').addEventListener('input', event => {
-  const index = event.target.dataset.notes;
-  if (index === undefined) return;
-  shortlist[Number(index)].notes = event.target.value; saveShortlist();
-});
-$('saved-list').addEventListener('change', event => {
-  const index = event.target.dataset.qualification;
-  if (index === undefined) return;
-  shortlist[Number(index)].status = event.target.value; saveShortlist();
-});
-$('saved-list').onclick = event => {
-  const button = event.target.closest('[data-remove]');
-  if (!button) return;
-  const index = Number(button.dataset.remove), removed = shortlist.splice(index, 1)[0];
-  saveShortlist(); renderShortlist();
-  $('saved-status').textContent = 'Building removed. ';
-  const undo = document.createElement('button'); undo.className = 'ghost'; undo.textContent = 'Undo';
-  undo.onclick = () => { shortlist.splice(Math.min(index, shortlist.length), 0, removed); saveShortlist(); renderShortlist(); };
-  $('saved-status').append(undo);
-};
-
-function download(name, content) {
-  const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a'); link.href = url; link.download = name; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-$('export').onclick = () => {
-  const header = ['origin', 'searched_at', 'borough', 'service', 'building_id', 'registration_id', 'address', 'zip', 'matching_open_records', 'matching_class_c', 'latest_approval', 'source'];
-  const rows = records.map(record => [isDemo ? 'FICTIONAL DEMO' : 'NYC HPD', context.searchedAt || '', context.boro, context.serviceLabel, record.buildingid, record.registrationid, `${record.housenumber} ${record.streetname}`, record.zip, record.total, record.class_c, record.latest, VIOLATIONS_SOURCE]);
-  download(`blocksignal-${isDemo ? 'DEMO' : 'results'}-${new Date().toISOString().slice(0, 10)}.csv`, csv([header, ...rows]));
-};
-$('export-shortlist').onclick = () => download(`blocksignal-shortlist-${new Date().toISOString().slice(0, 10)}.csv`, shortlistCsv(shortlist));
-renderShortlist();
+$('export-results').onclick = () => download('blocksignal-property-results.csv', csv([['address', 'borough', 'zip', 'bbl', 'residential_units_per_lot', 'tax_roll_owner', 'matching_hpd_records', 'matching_class_c', 'latitude', 'longitude', 'fetched_at', 'source'], ...records.map(r => [address(r), r.boro, r.zip || r.pluto?.zipcode, r.bbl, r.pluto?.unitsres, r.pluto?.ownername, r.total, r.class_c, r.pluto?.latitude, r.pluto?.longitude, context.searchedAt, context.type === 'properties' ? SOURCES.pluto : SOURCES.hpd])]), 'text/csv;charset=utf-8');
+$('export-portfolio').onclick = () => download('blocksignal-portfolio.csv', csv([['address', 'borough', 'bbl', 'mode', 'stage', 'responsible', 'next_check_date', 'reference', 'notes', 'last_hpd_check', 'registered_contacts', 'pluto_source', 'hpd_source'], ...saved.map(i => [address(i.record), i.record.boro, i.record.bbl, modes[i.mode]?.label, i.stage, i.responsible, i.due, i.reference, i.notes, i.checkedAt, (i.contacts || []).map(c => `${contactName(c)} (${c.type}) ${contactAddress(c)}`).join(' | '), SOURCES.pluto, SOURCES.hpd])]), 'text/csv;charset=utf-8');
+$('export-n8n').onclick = () => { try { const workflow = buildMonitorWorkflow(saved); download('blocksignal-n8n-portfolio-monitor.json', JSON.stringify(workflow, null, 2), 'application/json'); $('automation-status').textContent = 'Workflow exported with your saved HPD IDs. It is not running: import, review and publish it in n8n. Notification recipients are not configured.'; } catch (error) { $('automation-status').textContent = error.message; } };
+$('export-dossier').onclick = () => { if (!dossier) return; const styles = 'body{font:14px/1.7 Arial,sans-serif;color:#23352f;max-width:1000px;margin:40px auto;padding:20px}.property-title{font-size:30px;font-weight:bold}.property-subtitle,.fine-print,small{color:#647367;font-size:12px}.metric-grid{display:flex;gap:20px;margin:25px 0}.metric{flex:1;padding:15px;background:#f0f4e9}.metric span,.metric b,.metric small{display:block}.metric b{font-size:24px}.dossier-section{margin-top:25px;border-top:1px solid #dde4d7;padding-top:15px}.record{padding:10px 0;border-bottom:1px solid #e8ece3}.record-top{font-size:12px;font-weight:bold}.source-links a{margin-right:15px}.warning{background:#fff1d5;padding:15px}@media print{body{margin:0;padding:10px;font-size:11px}.metric,.record{break-inside:avoid}}'; download('blocksignal-dossier-' + (dossier.record.bbl || dossier.record.buildingid) + '.html', `<!doctype html><html lang="en"><meta charset="UTF-8"><title>BlockSignal — ${esc(address(dossier.record))}</title><style>${styles}</style><body><p>BLOCKSIGNAL · DATED PUBLIC-RECORD DOSSIER</p>${dossierHTML(dossier)}</body></html>`, 'text/html;charset=utf-8'); };
+filterFields(); renderSaved();

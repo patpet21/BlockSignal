@@ -1,0 +1,2 @@
+const ids=['kj4p-ruqc','64uk-42ks','8h5j-fqxa','bnx9-e6tj'];
+await Promise.all(ids.map(async id=>{try{const r=await fetch(`https://data.cityofnewyork.us/resource/${id}.json?$limit=1`,{signal:AbortSignal.timeout(30000)});const data=await r.json();if(!r.ok)throw Error(JSON.stringify(data));console.log(JSON.stringify({id,sample:data[0]}));}catch(error){console.error(id,error.message);process.exitCode=1;}}));

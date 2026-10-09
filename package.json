@@ -1,13 +1,14 @@
 {
   "name": "blocksignal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "NYC building research from public HPD records",
+  "description": "NYC property map, source-linked dossiers and portfolio monitoring",
   "scripts": {
     "dev": "node scripts/preview.mjs",
     "test": "node --test",
-    "verify:live": "node scripts/verify-live.mjs"
+    "verify:live": "node scripts/verify-live.mjs",
+    "verify:urban": "node scripts/verify-urban.mjs"
   },
   "engines": { "node": ">=22" }
 }

@@ -1,0 +1,11 @@
+import { api, enrichHPD, validCoordinates, findProperties, loadDossier } from '../dist/urban.js';
+const [records] = await enrichHPD([{ buildingid: '877800', boro: 'BROOKLYN', housenumber: '854', streetname: 'MYRTLE AVENUE', zip: '11206' }]);
+if (records.bbl !== '3017550020' || !validCoordinates(records.pluto)) throw new Error('HPD → PLUTO join/coordinates failed.');
+console.log(JSON.stringify({ join: 'passed', bbl: records.bbl, coordinates: validCoordinates(records.pluto), units: records.pluto.unitsres }));
+const lots = await findProperties({ boro: 'BROOKLYN', zip: '11206', query: 'MYRTLE AVENUE', minUnits: '3' });
+if (!lots.length || lots.some(r => Number(r.pluto.unitsres) < 3)) throw new Error('Multifamily query failed.');
+console.log(JSON.stringify({ propertySearch: 'passed', count: lots.length }));
+const dossier = await loadDossier(records);
+if (dossier.violations === null || !dossier.contacts.length) throw new Error('HPD dossier failed.');
+console.log(JSON.stringify({ dossier: 'passed', contacts: dossier.contacts.length, openRecords: dossier.violations.length, acrisDocuments: dossier.acris.documents.length, errors: dossier.errors }));
+if (dossier.errors.length) process.exitCode = 1;
